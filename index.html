@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>SmartBasket - Affordable Groceries</title>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<link rel="icon" href="/favicon.ico" type="image/x-icon">
+		<meta name="description" content="Scan your grocery receipt to find out where you can shop for cheaper prices." />
+		<link rel="stylesheet" href="/css/w3/w3.css">
+		<link rel="stylesheet" href="/css/site/style.css">
+		<link rel="stylesheet" href="/css/googlefonts/lato.css">
+		<link rel="stylesheet" href="/css/fontawesome/font-awesome.min.css">
+		<!-- Vue -->
+		<style>
+			#loader {
+				display: none;
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background-color: rgba(0, 0, 0, 0.8);
+				z-index: 9999;
+			}
+
+			#loader .w3-display-middle {
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				text-align: center;
+			}
+			.loader {
+    animation: rotate 1s infinite;
+    height: 50px;
+    width: 50px;
+  }
+
+  .loader:before,
+  .loader:after {
+    border-radius: 50%;
+    content: "";
+    display: block;
+    height: 20px;
+    width: 20px;
+  }
+  .loader:before {
+    animation: ball1 1s infinite;
+    background-color: #fff;
+    box-shadow: 30px 0 0 #ff3d00;
+    margin-bottom: 10px;
+  }
+  .loader:after {
+    animation: ball2 1s infinite;
+    background-color: #ff3d00;
+    box-shadow: 30px 0 0 #fff;
+  }
+
+  @keyframes rotate {
+    0% { transform: rotate(0deg) scale(0.8) }
+    50% { transform: rotate(360deg) scale(1.2) }
+    100% { transform: rotate(720deg) scale(0.8) }
+  }
+
+  @keyframes ball1 {
+    0% {
+      box-shadow: 30px 0 0 #ff3d00;
+    }
+    50% {
+      box-shadow: 0 0 0 #ff3d00;
+      margin-bottom: 0;
+      transform: translate(15px, 15px);
+    }
+    100% {
+      box-shadow: 30px 0 0 #ff3d00;
+      margin-bottom: 10px;
+    }
+  }
+
+  @keyframes ball2 {
+    0% {
+      box-shadow: 30px 0 0 #fff;
+    }
+    50% {
+      box-shadow: 0 0 0 #fff;
+      margin-top: -20px;
+      transform: translate(15px, 15px);
+    }
+    100% {
+      box-shadow: 30px 0 0 #fff;
+      margin-top: 0;
+    }
+  }
+  		</style>
+		<script src="/js/vue/vue.min.js"></script>
+		<!-- Text recognition -->
+		<script src="/js/tesseract/tesseract.min.js"></script>
+		<script src="/js/fuse/fuse.js"></script>
+	</head>
+	<body class="w3-gray">
+		<div id="loader" class="w3-display-container w3-center" style="height: 100vh; background-color: #000000;">
+			<div class="w3-display-middle">
+				<span class="loader"></span>				<!-- You can customize the loader appearance as needed -->
+				<div class="w3-spinner w3-spin" style="font-size: 3em;"></div>
+			</div>
+		</div>
+		<div class="w3-content" style="max-width: 2000px; padding-top: 0px;" id="checkjebon">
+		
+			<div class="w3-blue-grey">
+				<div class="w3-container w3-content w3-padding-64" style="max-width:800px">
+					<h2 class="w3-wide w3-center caps">SmartBasket</h2>
+					<p class="w3-opacity w3-center">See what you would pay for the same groceries at another supermarket and save every time you go shopping.</p>
+					<div class="w3-center">
+						<button class="w3-btn w3-ripple w3-amber" @click="scan" :disabled="isSearching" title="Scan your receipt"><i class="fa fa-camera"></i> Scan your receipt</button>
+						<button class="w3-btn w3-ripple w3-light-gray" @click="example" :disabled="isSearching" title="Example"> See an Example</button>
+						<input type="file" id="file-selector" style="display: none;">
+					</div>
+					<p class="w3-center">
+						- or -
+					</p>
+					<div class="w3-center">
+						<label>
+							<p>Write your shopping list here:</p>
+							<textarea class="w3-input" style="height: 300px;" v-model="shoppinglist" @input="update" :disabled="isSearching" placeholder="Type your groceries here or use the scan button to scan your latest receipt.&#10;&#10;semi-skimmed milk&#10;whole grain bread&#10;brown rice&#10;bananas&#10;baguette&#10;falafel" title="Enter your shopping list here"></textarea>
+						</label>
+					</div>
+					<p class="w3-center">
+						Looking for a specific brand? Type the brand name along with the product.
+					</p>
+					<p class="w3-center">
+						<button class="w3-btn w3-ripple w3-amber" @click="search" :disabled="isSearching" title="Compare prices"><i class="fa fa-search"></i> {{ isSearching ? "Searching..." : "Compare prices" }}</button>
+						<button class="w3-btn w3-ripple w3-light-gray" @click="share" :disabled="isSearching" title="Share"><i class="fa fa-share-alt"></i> Share</button>
+						<button class="w3-btn w3-ripple w3-light-gray" @click="clear" :disabled="isSearching" title="Clear"><i class="fa fa-trash"></i></button>
+					</p>
+				</div>
+			</div>
+
+			<div class="w3-light-gray" id="supermarkets" v-show="supermarkets.length > 0">
+				<div class="w3-container w3-content w3-padding-64" style="max-width: 800px">
+				
+					<h2 class="w3-wide w3-center caps">Total Price</h2>
+					
+					<ul class="w3-ul w3-card-4 w3-light-gray w3-hoverable">
+						<li class="w3-bar" :class="{'w3-amber': supermarket.n == selectedSupermarket?.n}" v-for="supermarket in supermarkets" :key="supermarket.n" @click="selectedSupermarket=supermarket; select()">
+
+							<table style="width: 100%;">
+								<tr :class="{'w3-hover-amber': supermarket.n == selectedSupermarket?.n}">
+									<td style="width: 80px">
+											<img v-bind:src="supermarket.i" class="w3-circle" style="width: 60px" :title="'Logo ' + supermarket.c">
+									</td>
+									<td>
+										<a href="#" class="w3-large noline" onclick="return false;" :title="supermarket.c + ': ' + $options.filters.formatPrice(supermarket.totalPrice) + ' euro'">
+											{{supermarket.c}}
+										</a>
+										<br>
+										<span class="w3-text-blue-gray">
+											<span v-if="supermarket.notFound > 0">
+												<i class="fa fa-info-circle"></i> {{supermarket.notFound}} product{{supermarket.notFound==1?"":"s"}} not found in
+											</span>
+											{{supermarket.d.length | formatCount}} products
+										</span>
+									</td>
+									<td class="w3-xlarge w3-right-align" style="width: 80px;">
+										{{ supermarket.totalPrice | formatPrice }}
+									</td>
+								</tr>
+							</table>
+
+						</li>
+					</ul>
+					<p class="w3-center">
+						Why some <a href="#" onclick="alert('Some major supermarket chains like LIDL, Nettorama, Boni, as well as online delivery services like GORILLAS and Crisp, do not have prices on their websites. Therefore, they cannot be included in SmartBasket\'s price comparison.'); return false;" target="_blank">supermarkets are missing</a>, such as LIDL, Nettorama, Boni, etc.
+					</p>
+				</div>
+			</div>
+			
+			<div class="w3-blue-grey" id="shoppinglist" v-show="selectedSupermarket">
+				<div class="w3-container w3-content w3-padding-64" style="max-width: 800px">
+					
+					<h2 class="w3-wide w3-center caps">{{ selectedSupermarket?.c }}</h2>
+					
+					<ul class="w3-ul w3-card-4 w3-light-gray w3-hoverable">
+						<li class="w3-bar" v-for="product in products">
+
+							<table style="width: 100%;" :class="{'w3-text-blue-gray': !product.link || product.checked, 'strike': product.checked}">
+								<tr>
+									<td style="width: 40px">
+										<input type="checkbox" class="w3-check" :checked="product.checked" @click="check(product, $event)">
+									</td>
+									<td>
+										<span class="w3-large">
+											<a v-bind:href="product.link" target="_blank" class="noline" :title="product.name + ': ' + $options.filters.formatPrice(product.price)">
+												{{ product.name }}
+											</a>
+										</span><br>
+										<span class="w3-text-blue-gray">
+											<span v-if="product.size">
+												<i class="fa fa-pencil" style="cursor: pointer;" @click="edit(product, $event, 'Bedoelde je soms iets anders? Pas dan de naam van dit product aan.\n\nTip: Hoe specifieker je bent, hoe beter het resultaat. Gebruik bijvoorbeeld &quot;smeerboter&quot; in plaats van &quot;boter&quot; of &quot;1,5 liter halfvolle melk&quot; in plaats van alleen &quot;melk&quot;.')" title="Product aanpassen"></i>
+												{{ product.size | formatAmount }}
+											</span>
+											<span v-if="product.priceNotFound && !product.priceIsEstimate">
+												<i class="fa fa-exclamation-triangle" style="cursor: pointer;" @click="edit(product, $event, 'Dit product kon bij geen enkele supermarket gevonden worden.\n\nPas de naam of hoeveelheid aan op je boodschappenlijst en probeer het opnieuw.')" title="Product aanpassen"></i>
+												Niet gevonden
+											</span>
+											<span v-if="product.priceNotFound && product.priceIsEstimate">
+												Niet gevonden, geschatte prijs
+												<i class="fa fa-question-circle" style="cursor: pointer;" @click="edit(product, $event, 'Het lijkt er op dat deze supermarkt dit product niet onder deze naam op hun website heeft staan. Om toch goed je boodschappenlijstje te kunnen vergelijken, is uitgegaan van de gemiddelde prijs van dit product bij andere winkels.\n\nOm het product toch te kunnen vinden, pas de naam of hoeveelheid aan om iets minder specifiek te zoeken.')" title="Product aanpassen"></i>
+											</span>
+										</span>
+									</td>
+									<td class="w3-xlarge w3-right-align" style="width: 80px;">
+										<a v-bind:href="product.link" target="_blank" class="noline" :title="product.name + ': ' + $options.filters.formatPrice(product.price)">
+											{{ !product.link && product.price ? "~" : "" }}{{ product.price | formatPrice }}
+										</a>
+									</td>
+								</tr>
+							</table>
+
+						</li>
+					</ul>					
+					<p class="w3-center">
+						<button class="w3-btn w3-ripple w3-amber" @click="share" title="Share your shopping list"><i class="fa fa-share-alt"></i> Share your shopping list</button>
+					</p>
+
+				</div>
+			</div>
+
+			<div class="w3-light-gray">
+				<div class="w3-container w3-content w3-padding-64" style="max-width: 800px">
+					<h2 class="w3-wide w3-center caps">About SmartBasket</h2>
+					<p class="w3-opacity w3-center">
+						Welcome to SmartBasket! We're a team of four students passionate about simplifying your grocery shopping. Frustrated with the hassle of comparing prices, we've created an easy-to-use solution. Our goal is to save you time and money by offering a centralized space for efficient price comparison. Explore our features tailored to your preferences and join us in making grocery shopping smarter and more.					</p>
+				</div>
+			</div>
+		</div>
+		<script>
+			document.addEventListener("DOMContentLoaded", function() {
+				// Show loader
+				document.getElementById("loader").style.display = "block";
+
+				// Simulate a delay for 3 seconds (adjust as needed)
+				setTimeout(function() {
+					// Hide the loader and show the content
+					document.getElementById("loader").style.display = "none";
+					document.getElementById("checkjebon").style.display = "block";
+				}, 3000); // 3000 milliseconds = 3 seconds
+			});
+		</script>		<script src="/js/site/script.js"></script>
+	</body>
+</html>
